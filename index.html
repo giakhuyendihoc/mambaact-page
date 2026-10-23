@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MambaAct: Efficient Mamba Action Experts</title>
+  <meta name="description" content="MambaAct replaces the Transformer action expert of flow-matching VLAs with a compact Mamba expert: 10x fewer action-expert parameters, 64.8% lower denoising latency, and higher success on LIBERO, LIBERO-Plus, and real-world UR5 tasks.">
+  <meta property="og:title" content="MambaAct: Efficient Mamba Action Experts for Flow-Matching Vision-Language-Action Models">
+  <meta property="og:description" content="A 10x smaller Mamba action expert that cuts flow-matching denoising latency by 64.8% while improving policy success.">
+  <meta property="og:image" content="static/images/MambaActVer5.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400&family=Source+Code+Pro:wght@400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #202124;
+      --muted: #5f6368;
+      --accent: #1a73e8;
+      --ours: #e8f5e9;
+      --ours-strong: #1e8e3e;
+      --rule: #dadce0;
+      --panel: #f8f9fa;
+      --btn: #202124;
+      --btn-text: #ffffff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #17181a;
+        --text: #e8eaed;
+        --muted: #9aa0a6;
+        --accent: #8ab4f8;
+        --ours: #1f3326;
+        --ours-strong: #81c995;
+        --rule: #3c4043;
+        --panel: #202124;
+        --btn: #e8eaed;
+        --btn-text: #202124;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #17181a;
+      --text: #e8eaed;
+      --muted: #9aa0a6;
+      --accent: #8ab4f8;
+      --ours: #1f3326;
+      --ours-strong: #81c995;
+      --rule: #3c4043;
+      --panel: #202124;
+      --btn: #e8eaed;
+      --btn-text: #202124;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Noto Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 17px;
+      line-height: 1.65;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+
+    /* Header */
+    header { text-align: center; padding: 56px 0 8px; }
+    h1 {
+      font-size: clamp(30px, 5vw, 46px);
+      font-weight: 700;
+      line-height: 1.15;
+      margin: 0 0 8px;
+      letter-spacing: -0.5px;
+    }
+    .subtitle {
+      font-size: clamp(18px, 2.6vw, 24px);
+      font-weight: 400;
+      color: var(--muted);
+      margin: 0 0 28px;
+    }
+    .venue {
+      display: inline-block;
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      border: 1px solid var(--rule);
+      border-radius: 999px;
+      padding: 2px 14px;
+      margin-bottom: 20px;
+    }
+    .authors {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 6px;
+      font-size: 19px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 4px 22px;
+    }
+    .authors sup { color: var(--muted); }
+    .affiliations {
+      color: var(--muted);
+      font-size: 15px;
+      margin: 0 0 28px;
+    }
+    .affiliations span { margin: 0 10px; display: inline-block; }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 36px;
+    }
+    .links a {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--btn);
+      color: var(--btn-text);
+      padding: 8px 18px;
+      border-radius: 999px;
+      font-size: 15px;
+      font-weight: 500;
+    }
+    .links a:hover { opacity: 0.85; text-decoration: none; }
+    .links svg { width: 18px; height: 18px; fill: currentColor; }
+
+    /* Media */
+    .teaser video, figure img, figure video {
+      width: 100%;
+      display: block;
+      border-radius: 8px;
+    }
+    .teaser { margin: 0 0 12px; }
+    .caption, figcaption {
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.55;
+      margin-top: 10px;
+      text-align: left;
+    }
+    figure { margin: 28px 0; }
+    figure.narrow { max-width: 640px; margin-left: auto; margin-right: auto; }
+    figure img.on-white { background: #fff; padding: 8px; }
+
+    /* Highlights */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin: 36px 0 8px;
+    }
+    .stat {
+      background: var(--panel);
+      border-radius: 10px;
+      padding: 16px 12px;
+      text-align: center;
+    }
+    .stat b { display: block; font-size: 30px; line-height: 1.2; color: var(--ours-strong); }
+    .stat span { font-size: 14px; color: var(--muted); line-height: 1.4; display: block; margin-top: 4px; }
+
+    /* Sections */
+    section { padding-top: 28px; }
+    h2 {
+      font-size: 28px;
+      font-weight: 700;
+      margin: 24px 0 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--rule);
+    }
+    h3 { font-size: 20px; font-weight: 700; margin: 28px 0 8px; }
+    p { margin: 0 0 14px; }
+    .abstract p { text-align: justify; hyphens: auto; }
+    ul.contrib { padding-left: 22px; }
+    ul.contrib li { margin-bottom: 8px; }
+
+    /* Tables */
+    .table-wrap { overflow-x: auto; margin: 18px 0 6px; -webkit-overflow-scrolling: touch; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 15px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    th, td { padding: 7px 10px; text-align: center; }
+    th:first-child, td:first-child { text-align: left; }
+    thead th { border-bottom: 2px solid var(--text); font-weight: 700; }
+    thead tr.group th { border-bottom: 1px solid var(--rule); font-weight: 500; color: var(--muted); }
+    tbody tr { border-bottom: 1px solid var(--rule); }
+    tbody tr:last-child { border-bottom: 2px solid var(--text); }
+    tr.ours td { background: var(--ours); font-weight: 700; }
+    tr.cat td { background: var(--panel); font-weight: 500; color: var(--muted); font-size: 13px; text-align: left; padding: 4px 10px; }
+    .down { color: var(--ours-strong); font-size: 13px; font-weight: 500; margin-left: 4px; }
+    .table-caption { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+
+    /* BibTeX */
+    pre.bibtex {
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 16px 18px;
+      overflow-x: auto;
+      font-family: "Source Code Pro", Consolas, monospace;
+      font-size: 14px;
+      line-height: 1.5;
+      position: relative;
+    }
+    .copy-btn {
+      float: right;
+      font: inherit;
+      font-size: 13px;
+      border: 1px solid var(--rule);
+      background: var(--bg);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 2px 10px;
+      cursor: pointer;
+    }
+
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+      padding: 40px 0 56px;
+    }
+
+    @media (max-width: 680px) {
+      body { font-size: 16px; }
+      header { padding-top: 36px; }
+      .subtitle br { display: none; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .abstract p { text-align: left; }
+      table { font-size: 13px; }
+      th, td { padding: 6px 7px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <header>
+      <div class="venue">ICRA 2027 Submission</div>
+      <h1>MambaAct</h1>
+      <p class="subtitle">Efficient Mamba Action Experts for Flow-Matching<br>Vision-Language-Action Models</p>
+
+      <ul class="authors">
+        <li>Khuyen Pham<sup>1</sup></li>
+        <li>Tran Nguyen Le<sup>2</sup></li>
+        <li>Edoardo Fazzari<sup>1</sup></li>
+        <li>Cesare Stefanini<sup>1</sup></li>
+      </ul>
+      <p class="affiliations">
+        <span><sup>1</sup>MBZUAI &ndash; Mohamed bin Zayed University of Artificial Intelligence</span>
+        <span><sup>2</sup>DTU &ndash; Technical University of Denmark</span>
+      </p>
+
+      <nav class="links">
+        <a href="https://arxiv.org/abs/2610.22951">
+          <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 13h8v2H8v-2zm0 4h8v2H8v-2zm0-8h3v2H8V9z"/></svg>
+          Paper
+        </a>
+        <a href="https://github.com/giakhuyendihoc/MambaAct">
+          <svg viewBox="0 0 24 24"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.9 1.3 3.6 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.6 18.3 5 18.3 5c.7 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5z"/></svg>
+          Code &amp; Weights
+        </a>
+        <a href="#video">
+          <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          Video
+        </a>
+      </nav>
+    </header>
+
+    <div class="teaser" id="video">
+      <video controls playsinline preload="metadata" poster="static/images/real_tasks_bigfont.jpg">
+        <source src="static/videos/mambaact_icra.mp4" type="video/mp4">
+        Your browser does not support the video tag.
+      </video>
+      <p class="caption">MambaAct running on a UR5 for real-world tube placing and multi-step nut pouring, alongside an overview of the method.</p>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><b>10&times;</b><span>smaller action expert<br>(311.5M &rarr; 29.7M)</span></div>
+      <div class="stat"><b>&minus;64.8%</b><span>denoising latency<br>on LIBERO (H100)</span></div>
+      <div class="stat"><b>&minus;58.8%</b><span>denoising latency<br>real-world (RTX 5090)</span></div>
+      <div class="stat"><b>+1.08 pp</b><span>mean LIBERO success<br>over 3 seeds</span></div>
+    </div>
+
+    <section class="abstract">
+      <h2>Abstract</h2>
+      <p>
+        Vision-language-action (VLA) models have shown strong promise for generalist robotic manipulation, but their inference cost remains a major bottleneck for real-time control. This limitation is especially pronounced in flow-matching VLAs such as &pi;<sub>0.5</sub>, where the action expert is evaluated repeatedly during iterative denoising. We introduce <b>MambaAct</b>, an efficient Mamba action expert for flow-matching VLA policies. MambaAct retains the pretrained visual-language prefix encoder of &pi;<sub>0.5</sub>, while replacing its transformer-based action expert with a compact Mamba-based action expert. Within this expert, Mamba serves as the action mixer that models dependencies across the noisy continuous-action sequence. To preserve visual-language conditioning without repeated token-level cross-attention, MambaAct uses a lightweight Context Compressor to map Vision-language model (VLM) prefix tokens into a compact conditioning signal that gates and modulates each Mamba action block. MambaAct uses a 10&times; smaller action expert and reduces flow-matching denoising latency by 64.8% on LIBERO and 58.8% in real-world deployment, while improving mean LIBERO success by 1.08 percentage points across three independent fine-tuning seeds and maintaining gains on LIBERO-Plus and real-world benchmarks.
+      </p>
+    </section>
+
+    <section id="motivation">
+      <h2>Why the Action Expert?</h2>
+      <p>
+        In flow-matching VLAs, the visual-language prefix is computed once per policy query, but the action expert is evaluated at <i>every</i> denoising step. With the standard 10 Euler steps, denoising accounts for <b>70.1%</b> of end-to-end latency in &pi;<sub>0.5</sub> and <b>86.4%</b> in SmolVLA. Iterative action generation stays the dominant cost even with a much smaller VLM, so per-step savings in the action expert accumulate across the whole denoising trajectory.
+      </p>
+      <figure class="narrow">
+        <img class="on-white" src="static/images/latency_decomposition.png" alt="Stacked bar chart: pi0.5 end-to-end latency 229 ms, of which 160 ms is denoising; SmolVLA 187 ms, of which 162 ms is denoising." loading="lazy">
+        <figcaption>Latency decomposition of &pi;<sub>0.5</sub> and SmolVLA on LIBERO, highlighting action generation as the dominant source of latency.</figcaption>
+      </figure>
+      <p>
+        Prior efficiency work mostly reduces sampling steps, prunes or compresses the backbone, drops visual tokens, or redesigns the whole policy. MambaAct targets a complementary axis: <b>replace the repeatedly evaluated action expert itself</b>, while keeping the pretrained VLM and the standard flow-matching formulation, with no extra pretraining or distillation.
+      </p>
+    </section>
+
+    <section id="approach">
+      <h2>Approach</h2>
+      <figure>
+        <img class="on-white" src="static/images/MambaActVer5.png" alt="MambaAct architecture: pi0.5 SigLIP + Gemma backbone feeding a Context Compressor and condition vector z into FiLM gate MLPs that modulate four gated Mamba blocks in the action expert." loading="lazy">
+        <figcaption>
+          <b>MambaAct architecture.</b> MambaAct retains and jointly fine-tunes the pretrained &pi;<sub>0.5</sub> visual-language backbone while replacing its Transformer action expert with a compact Mamba-3 expert. The VLM prefix is compressed into visual, language, and learned-query global context tokens <b>C</b> and pooled into <b>z</b>, which block-specific FiLM MLPs map to scale, shift, and residual-gate parameters. The noisy action chunk <b>X</b><sub>t</sub> is projected into the action-token sequence <b>H</b><sup>(0)</sup>, while the embedded flow time <b>c</b><sub>t</sub> is injected through block-specific projections. The L&nbsp;=&nbsp;4 gated Mamba-3 blocks transform the action tokens, and a final RMSNorm-linear head predicts the flow velocity used by repeated Euler updates to obtain the denoised action chunk <b>X</b><sub>0</sub>.
+        </figcaption>
+      </figure>
+
+      <h3>Context Compressor</h3>
+      <p>
+        VLM prefix tokens are projected to the action-expert width and compressed into <b>K&nbsp;=&nbsp;64</b> context tokens: 44 visual segments and 16 language segments (masked mean pooling over contiguous blocks) plus 4 learned-query global summaries extracted with multi-head attention. A masked mean over these tokens yields a single condition vector <b>z</b>, which is computed once per query and reused across all denoising steps.
+      </p>
+
+      <h3>Gated Mamba action expert</h3>
+      <p>
+        Four Mamba-3 blocks (width 512, state size 64) act as the sequence mixer over the action-token dimension. In each block, a FiLM gate MLP maps <b>z</b> to a scale, shift, and residual gate that modulate the Mamba update, replacing repeated token-level cross-attention. Flow time is injected per block. FiLM outputs are zero-initialized and the gates start at 0.2, so the new branch begins attenuated but active. The resulting expert has <b>29.7M</b> parameters, compared with <b>311.5M</b> for the original &pi;<sub>0.5</sub> action expert.
+      </p>
+
+      <h3>Contributions</h3>
+      <ul class="contrib">
+        <li>We introduce <b>MambaAct</b>, establishing action-expert replacement as a complementary efficiency axis for flow-matching VLAs, without additional pretraining or distillation.</li>
+        <li>We show that Mamba enables aggressive action-expert compression: over 10&times; fewer action-expert parameters than &pi;<sub>0.5</sub> while improving mean LIBERO success by 1.08 percentage points across three fine-tuning seeds.</li>
+        <li>Through controlled ablations, we examine the contributions of the Mamba action mixer and conditioning interface, and show that MambaAct composes with VLM-depth reduction and transfers to SmolVLA.</li>
+      </ul>
+    </section>
+
+    <section id="results">
+      <h2>Results</h2>
+
+      <h3>LIBERO</h3>
+      <p>
+        Across three independent fine-tuning seeds, MambaAct improves average success from 96.72% to 97.80% while shrinking the total model from 3.62B to 2.96B parameters. The Context Compressor adds a small prefix overhead, but denoising latency drops by 64.8%, cutting end-to-end latency by 52.9%.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Model</th><th>Spatial</th><th>Object</th><th>Goal</th><th>L-10</th><th>Avg.</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>&pi;<sub>0.5</sub></td><td>98.00 &plusmn; 0.43</td><td>98.33 &plusmn; 0.66</td><td>97.73 &plusmn; 0.84</td><td>92.80 &plusmn; 0.43</td><td>96.72 &plusmn; 0.14</td></tr>
+            <tr class="ours"><td>MambaAct</td><td>98.73 &plusmn; 0.34</td><td>99.60 &plusmn; 0.43</td><td>98.60 &plusmn; 0.28</td><td>94.27 &plusmn; 1.52</td><td>97.80 &plusmn; 0.43</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr class="group"><th></th><th></th><th colspan="3">Latency (ms)</th></tr>
+            <tr><th>Model</th><th>Model size (B)</th><th>Prefix</th><th>Denoise</th><th>E2E</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>&pi;<sub>0.5</sub></td><td>3.62</td><td>40.76</td><td>160.26</td><td>228.6</td></tr>
+            <tr class="ours"><td>MambaAct</td><td>2.96</td><td>46.61</td><td>56.40<span class="down">&darr;64.8%</span></td><td>107.6<span class="down">&darr;52.9%</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-caption">Success rate (%) as mean &plusmn; std over fine-tuning seeds {17, 27, 42}, 50 trials per task. Latency measured on the seed-42 checkpoints on a single H100.</p>
+
+      <h3>Comparison with efficient VLA methods</h3>
+      <p>
+        MambaAct reaches the second-highest average among recent efficient VLAs, with a 2.12&times; speedup over its own baseline. Its best run (seed 42) averages 98.4%. Unlike step-compression approaches such as SnapFlow, MambaAct keeps standard 10-step flow-matching inference and needs no distillation stage, so the two are complementary.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Method</th><th>Baseline</th><th>Spatial</th><th>Object</th><th>Goal</th><th>L-10</th><th>Avg.</th><th>Speedup</th></tr>
+          </thead>
+          <tbody>
+            <tr class="cat"><td colspan="8">Controlled baseline</td></tr>
+            <tr><td>&pi;<sub>0.5</sub></td><td>&ndash;</td><td>98.0</td><td>98.3</td><td>97.7</td><td>92.8</td><td>96.7</td><td>1.00&times;</td></tr>
+            <tr class="cat"><td colspan="8">Action-expert replacement &amp; conditioning</td></tr>
+            <tr class="ours"><td>MambaAct (Ours)</td><td>&pi;<sub>0.5</sub></td><td>98.7</td><td>99.6</td><td>98.6</td><td>94.3</td><td>97.8</td><td>2.12&times;</td></tr>
+            <tr class="cat"><td colspan="8">Denoising-step compression</td></tr>
+            <tr><td>SnapFlow</td><td>&pi;<sub>0.5</sub></td><td>99.0</td><td>100.0</td><td>99.0</td><td>97.0</td><td>98.8</td><td>3.30&times;</td></tr>
+            <tr class="cat"><td colspan="8">VLM / action-head depth distillation</td></tr>
+            <tr><td>Shallow-&pi; (&pi;<sub>0.5</sub>-L9)</td><td>&pi;<sub>0.5</sub></td><td>99.0</td><td>98.0</td><td>97.0</td><td>93.0</td><td>97.0</td><td>1.72&times;</td></tr>
+            <tr class="cat"><td colspan="8">Structural layer pruning</td></tr>
+            <tr><td>&pi;<sub>0</sub>-CLP</td><td>&pi;<sub>0</sub></td><td>95.0</td><td>99.2</td><td>95.0</td><td>86.4</td><td>93.9</td><td>1.39&times;</td></tr>
+            <tr><td>GR00T-N1.5-CLP</td><td>GR00T-N1.5</td><td>89.4</td><td>98.8</td><td>95.8</td><td>88.6</td><td>93.0</td><td>1.42&times;</td></tr>
+            <tr class="cat"><td colspan="8">Visual-token pruning</td></tr>
+            <tr><td>LightVLA</td><td>OpenVLA-OFT</td><td>98.4</td><td>98.4</td><td>98.2</td><td>94.6</td><td>97.4</td><td>n/a</td></tr>
+            <tr><td>ADP</td><td>OpenVLA-OFT</td><td>97.6</td><td>98.4</td><td>97.4</td><td>84.2</td><td>94.4</td><td>1.35&times;</td></tr>
+            <tr><td>&pi;<sub>0</sub>-SpecPrune-VLA</td><td>&pi;<sub>0</sub></td><td>96.6</td><td>98.0</td><td>95.2</td><td>84.2</td><td>93.5</td><td>1.31&times;</td></tr>
+            <tr><td>FastV</td><td>OpenVLA-OFT</td><td>94.6</td><td>95.8</td><td>94.0</td><td>88.8</td><td>93.3</td><td>1.44&times;</td></tr>
+            <tr><td>DivPrune</td><td>OpenVLA-OFT</td><td>92.4</td><td>91.2</td><td>89.0</td><td>84.8</td><td>89.4</td><td>1.46&times;</td></tr>
+            <tr class="cat"><td colspan="8">Routing and sparsification</td></tr>
+            <tr><td>CogVLA</td><td>OpenVLA</td><td>99.0</td><td>99.0</td><td>97.0</td><td>95.0</td><td>97.0</td><td>n/a</td></tr>
+            <tr class="cat"><td colspan="8">Hybrid multi-axis acceleration</td></tr>
+            <tr><td>EfficientVLA</td><td>OpenVLA-OFT</td><td>96.5</td><td>91.1</td><td>96.0</td><td>72.1</td><td>88.9</td><td>1.52&times;</td></tr>
+            <tr class="cat"><td colspan="8">Compact or alternative architectures</td></tr>
+            <tr><td>SUREFlow</td><td>Compact Mamba</td><td>94.8</td><td>91.0</td><td>93.8</td><td>90.2</td><td>92.5</td><td>n/a</td></tr>
+            <tr><td>SmolVLA</td><td>Compact VLA</td><td>90.0</td><td>96.0</td><td>92.0</td><td>71.0</td><td>87.3</td><td>n/a</td></tr>
+            <tr><td>OpenVLA</td><td>Autoregressive</td><td>84.9</td><td>88.4</td><td>79.2</td><td>53.7</td><td>76.6</td><td>n/a</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-caption">Speedup is relative to each method's own baseline. &pi;<sub>0.5</sub> and MambaAct are means over three fine-tuning seeds; other results are from the cited works.</p>
+
+      <h3>LIBERO-Plus: zero-shot robustness</h3>
+      <p>
+        On LIBERO-Plus (10,030 perturbed test instances across seven categories), MambaAct achieves the highest overall score at 79.7%. The largest gain is under robot initial-pose variation (70.9% &rarr; 77.6%), and it also posts the best lighting score. The main drop is under observation noise. Strong standard-LIBERO performance does not come at the cost of robustness.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Method</th><th>Camera</th><th>Robot</th><th>Language</th><th>Light</th><th>Backgr.</th><th>Noise</th><th>Layout</th><th>Total</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>OpenVLA</td><td>0.8</td><td>3.5</td><td>23.0</td><td>8.1</td><td>34.8</td><td>15.2</td><td>28.5</td><td>15.6</td></tr>
+            <tr><td>OpenVLA-OFT</td><td>56.4</td><td>31.9</td><td>79.5</td><td>88.7</td><td>93.3</td><td>75.8</td><td>74.2</td><td>69.6</td></tr>
+            <tr><td>OpenVLA-OFT<sub>w</sub></td><td>10.4</td><td>38.7</td><td>70.5</td><td>76.8</td><td>93.6</td><td>49.9</td><td>69.9</td><td>55.8</td></tr>
+            <tr><td>OpenVLA-OFT<sub>m</sub></td><td>55.6</td><td>21.7</td><td>81.0</td><td>92.7</td><td>91.0</td><td>78.6</td><td>68.7</td><td>67.9</td></tr>
+            <tr><td>NORA</td><td>2.2</td><td>37.0</td><td>65.1</td><td>45.7</td><td>58.6</td><td>12.8</td><td>62.1</td><td>39.0</td></tr>
+            <tr><td>WorldVLA</td><td>0.1</td><td>27.9</td><td>41.6</td><td>43.7</td><td>17.1</td><td>10.9</td><td>38.0</td><td>25.0</td></tr>
+            <tr><td>UniVLA</td><td>1.8</td><td>46.2</td><td>69.6</td><td>69.0</td><td>81.0</td><td>21.2</td><td>31.9</td><td>42.9</td></tr>
+            <tr><td>&pi;<sub>0</sub></td><td>13.8</td><td>6.0</td><td>58.8</td><td>85.0</td><td>81.4</td><td>79.0</td><td>68.9</td><td>53.6</td></tr>
+            <tr><td>&pi;<sub>0</sub>-Fast</td><td>65.1</td><td>21.6</td><td>61.0</td><td>73.2</td><td>73.2</td><td>74.4</td><td>68.8</td><td>61.6</td></tr>
+            <tr><td>RIPT-VLA</td><td>55.2</td><td>31.2</td><td>77.6</td><td>88.4</td><td>91.6</td><td>73.5</td><td>74.2</td><td>68.4</td></tr>
+            <tr><td>&pi;<sub>0.5</sub></td><td>61.6</td><td>70.9</td><td>76.4</td><td>94.9</td><td>92.7</td><td>77.4</td><td>86.4</td><td>78.7</td></tr>
+            <tr class="ours"><td>MambaAct (Ours)</td><td>61.5</td><td>77.6</td><td>79.8</td><td>95.2</td><td>93.2</td><td>73.5</td><td>86.4</td><td>79.7</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-caption">All models are trained on standard LIBERO and evaluated without LIBERO-Plus fine-tuning. Published rows are from the LIBERO-Plus paper; &pi;<sub>0.5</sub> and MambaAct use our matched protocol.</p>
+
+      <h3>Real-world UR5 manipulation</h3>
+      <figure>
+        <img src="static/images/real_tasks_bigfont.jpg" alt="Two UR5 setups with position grids: left, tube placing between source and target holders; right, nut pouring with blue container, black container, and target." loading="lazy">
+        <figcaption>Real-world benchmark setups: (left) tube placing and (right) multi-step nut pouring. Blue grid positions are used for training and in-distribution (ID) evaluation; red positions are held out for out-of-distribution (OOD) testing. Each task uses 112 demonstrations and 80 evaluation trials (28 ID + 52 OOD).</figcaption>
+      </figure>
+      <p>
+        Both models reach 100% ID success; the difference shows up out of distribution. MambaAct improves OOD success from 86.5% to 95.2% on nut pouring and from 76.9% to 82.7% on tube placing, while denoising latency drops by 58.8% and end-to-end latency by about 33%.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr class="group"><th></th><th></th><th colspan="3">Latency (ms)</th><th colspan="3">Success rate (%)</th></tr>
+            <tr><th>Task</th><th>Model</th><th>Prefix</th><th>Denoise</th><th>E2E</th><th>ID</th><th>OOD</th><th>Final</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Nut pouring</td><td>&pi;<sub>0.5</sub></td><td>39.45</td><td>74.82</td><td>125.49</td><td>100.0</td><td>86.5</td><td>91.3</td></tr>
+            <tr class="ours"><td>Nut pouring</td><td>MambaAct</td><td>41.03</td><td>30.84<span class="down">&darr;58.8%</span></td><td>82.97<span class="down">&darr;33.9%</span></td><td>100.0</td><td>95.2</td><td>96.9</td></tr>
+            <tr><td>Tube placing</td><td>&pi;<sub>0.5</sub></td><td>39.12</td><td>75.42</td><td>124.84</td><td>100.0</td><td>76.9</td><td>85.0</td></tr>
+            <tr class="ours"><td>Tube placing</td><td>MambaAct</td><td>41.15</td><td>31.11<span class="down">&darr;58.8%</span></td><td>83.26<span class="down">&darr;33.3%</span></td><td>100.0</td><td>82.7</td><td>88.8</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-caption">Inference on an RTX 5090. Model size 3.62B &rarr; 2.96B (&darr;18.2%), GFLOPs 5001.2 &rarr; 4488.8 (&darr;10.2%). Success uses partial credit for meaningful intermediate completion.</p>
+    </section>
+
+    <section id="ablations">
+      <h2>Ablations</h2>
+
+      <h3>Where does the gain come from?</h3>
+      <p>
+        A 2&times;2 comparison of action mixers and conditioning interfaces shows that Mamba substantially outperforms a size-matched Transformer under both gated (98.4% vs. 85.7%) and cross-attention (96.7% vs. 75.6%) conditioning. Gated FiLM conditioning is also faster than cross-attention, although its accuracy edge is partly confounded by the larger gated expert.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Mixer</th><th>Conditioning</th><th>Spatial</th><th>Object</th><th>Goal</th><th>L-10</th><th>Avg.</th><th>Size (B)</th><th>Latency (ms)</th></tr>
+          </thead>
+          <tbody>
+            <tr class="ours"><td>Mamba</td><td>Gate</td><td>99.2</td><td>99.8</td><td>98.8</td><td>95.8</td><td>98.4</td><td>0.030</td><td>107.61</td></tr>
+            <tr><td>Mamba</td><td>Cross-Attn</td><td>98.6</td><td>99.4</td><td>94.6</td><td>94.2</td><td>96.7</td><td>0.017</td><td>119.66</td></tr>
+            <tr><td>Transformer</td><td>Gate</td><td>82.8</td><td>90.6</td><td>86.8</td><td>82.6</td><td>85.7</td><td>0.030</td><td>74.22</td></tr>
+            <tr><td>Transformer</td><td>Cross-Attn</td><td>75.2</td><td>82.8</td><td>75.8</td><td>68.6</td><td>75.6</td><td>0.018</td><td>85.60</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-caption">All variants share the same Context Compressor. Size reports the action-expert core.</p>
+
+      <h3>Composability with VLM-depth reduction</h3>
+      <p>
+        Running only the first 12 of 18 VLM layers (MambaAct L12) keeps 97.5% average LIBERO success and cuts training time from 13.78 to 10.81 hours. On the real robot it shrinks the model to 2.30B parameters and lowers latency from 83 to 74 ms, while keeping 100% ID success and reaching 95.0% (nut pouring) and 90.0% (tube placing) final success.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr class="group"><th></th><th colspan="5">LIBERO success (%)</th><th></th><th colspan="3">Latency (ms)</th></tr>
+            <tr><th>Model</th><th>Spatial</th><th>Object</th><th>Goal</th><th>L-10</th><th>Avg.</th><th>Train (h)</th><th>Prefix</th><th>Denoise</th><th>E2E</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>MambaAct</td><td>99.2</td><td>99.8</td><td>98.8</td><td>95.8</td><td>98.4</td><td>13.78</td><td>46.61</td><td>56.40</td><td>107.6</td></tr>
+            <tr class="ours"><td>MambaAct L12</td><td>98.0</td><td>99.8</td><td>98.0</td><td>94.0</td><td>97.5</td><td>10.81</td><td>41.15</td><td>56.06</td><td>102.91</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Transfer to SmolVLA</h3>
+      <p>
+        Replacing SmolVLA's Transformer action expert with a 4-block Mamba expert shrinks it from 98.25M to 64.31M parameters. Under the same training budget, average LIBERO success rises from 81.30% to 84.95%, and end-to-end latency falls by 52.0%. The largest gains are on LIBERO-10 (70.2% &rarr; 77.8%).
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr class="group"><th></th><th colspan="5">LIBERO success (%)</th><th colspan="3">Latency (ms)</th><th></th></tr>
+            <tr><th>Model</th><th>Spatial</th><th>Object</th><th>Goal</th><th>L-10</th><th>Avg.</th><th>Prefix</th><th>Denoise</th><th>E2E</th><th>Expert (M)</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Released SmolVLA</td><td>76.6</td><td>93.0</td><td>85.4</td><td>70.2</td><td>81.30</td><td>25.53</td><td>163.15</td><td>188.69</td><td>98.25</td></tr>
+            <tr class="ours"><td>SmolVLA-MambaAct</td><td>82.6</td><td>92.4</td><td>87.0</td><td>77.8</td><td>84.95</td><td>30.69</td><td>59.89</td><td>90.61</td><td>64.31</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-caption">50 trials per task, evaluation seed 7, native action horizon H&nbsp;=&nbsp;50, 10 denoising steps. Latency on a single H100.</p>
+    </section>
+
+    <section id="bibtex">
+      <h2>Citation</h2>
+      <pre class="bibtex"><button class="copy-btn" type="button" onclick="copyBib(this)">Copy</button><code id="bib">@article{pham2026mambaact,
+  title   = {MambaAct: Efficient Mamba Action Experts for
+             Flow-Matching Vision-Language-Action Models},
+  author  = {Pham, Khuyen and Le, Tran Nguyen and
+             Fazzari, Edoardo and Stefanini, Cesare},
+  journal = {arXiv preprint arXiv:2610.22951},
+  year    = {2026}
+}</code></pre>
+    </section>
+
+    <footer>
+      Website template inspired by the <a href="https://robotics-transformer2.github.io/">RT-2 project page</a>.
+    </footer>
+  </div>
+
+  <script>
+    function copyBib(btn) {
+      const text = document.getElementById('bib').innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = 'Copied';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+      });
+    }
+  </script>
+</body>
+</html>
